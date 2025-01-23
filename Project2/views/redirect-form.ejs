@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Redirecting...</title>
+</head>
+<body>
+    <form id="redirectForm" action="<%= action %>" method="POST">
+        <% for (const key in fields) { %>
+            <input type="hidden" name="<%= key %>" value="<%= fields[key] %>">
+        <% } %>
+    </form>
+    <script>
+        document.getElementById('redirectForm').submit();
+    </script>
+</body>
+</html>

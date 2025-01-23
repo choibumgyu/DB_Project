@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title><%= stockName %> 호가창</title>
+    <script>
+        function showMarketOrder() {
+            document.getElementById('marketOrderForm').style.display = 'block';
+            document.getElementById('limitOrderForm').style.display = 'none';
+        }
+
+        function showLimitOrder() {
+            document.getElementById('marketOrderForm').style.display = 'none';
+            document.getElementById('limitOrderForm').style.display = 'block';
+        }
+
+        function toggleTradeType() {
+            const tradeType = document.getElementById('tradeType').value;
+            if (tradeType === '1') {
+                document.getElementById('limitOrderForm').action = "/trade/limit-buy";
+            } else if (tradeType === '2') {
+                document.getElementById('limitOrderForm').action = "/trade/limit-sell";
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1><%= stockName %> 호가창</h1>
+    <h2>현재가: <%= currentPrice %> 원</h2>
+    <table border="1">
+        <tr>
+            <th>가격</th>
+            <th>매도 수량</th>
+            <th>매수 수량</th>
+        </tr>
+        <% orderBook.reverse().forEach(level => { %> <!-- 낮은 가격이 아래로 오도록 reverse() 적용 -->
+            <tr>
+                <td>
+                    <%= level.price %>
+                    <% if (level.isCurrentPrice) { %> (현재가) <% } %> <!-- 현재가 표시 -->
+                </td>
+                <td><%= level.sellCount %></td>
+                <td><%= level.buyCount %></td>
+            </tr>
+        <% }); %>
+    </table>
+
+    <!-- 거래 버튼 -->
+    <button onclick="showMarketOrder()">시장가 거래</button>
+    <button onclick="showLimitOrder()">지정가 거래</button>
+
+    <!-- 시장가 거래 폼 -->
+    <form id="marketOrderForm" action="/trade/market" method="POST" style="display: none;">
+        <h2>시장가 거래</h2>
+        <input type="hidden" name="stockId" value="<%= stockId %>">
+        <label>매수/매도:
+            <select name="tradeType">
+                <option value="1">매수</option>
+                <option value="2">매도</option>
+            </select>
+        </label><br>
+        <label>수량: <input type="number" name="quantity" required></label><br>
+        <button type="submit">시장가 거래 요청</button>
+    </form>
+
+    <!-- 지정가 거래 폼 -->
+    <form id="limitOrderForm" action="/trade/limit-buy" method="POST" style="display: none;">
+        <h2>지정가 거래</h2>
+        <input type="hidden" name="stockId" value="<%= stockId %>">
+        <label>매수/매도:
+            <select id="tradeType" name="tradeType" onchange="toggleTradeType()">
+                <option value="1">매수</option>
+                <option value="2">매도</option>
+            </select>
+        </label><br>
+        <label>수량: <input type="number" name="quantity" required></label><br>
+        <label>가격: <input type="number" name="price" required></label><br>
+        <button type="submit">지정가 거래 요청</button>
+    </form>
+
+    <button onclick="location.href='/stocks'">주식 정보로 돌아가기</button>
+</body>
+</html>

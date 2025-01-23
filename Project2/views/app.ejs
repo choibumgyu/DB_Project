@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>메인 페이지</title>
+</head>
+<body>
+    <h1>메인 페이지</h1>
+    
+    <% if (!loggedIn) { %>
+        <button onclick="location.href='/login'">로그인</button>
+        <button onclick="location.href='/signup'">회원가입</button>
+    <% } else { %>
+        <button onclick="location.href='/mypage'">마이페이지</button>
+        <button onclick="location.href='/stocks'">주식 정보</button>
+        <form action="/delete-account" method="POST">
+            <button type="submit">회원 탈퇴</button>
+        </form>
+        <button onclick="location.href='/logout'">로그아웃</button>
+    <% } %>
+</body>
+</html>

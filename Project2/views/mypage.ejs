@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>마이페이지</title>
+</head>
+<body>
+    <h1>마이페이지</h1>
+    <p>이름: <%= user.name %></p>
+    <p>비밀번호: <%= user.password %></p>
+    <p>예수금: <%= user.balance %> 원</p>
+    
+    <!-- 예수금 관리 -->
+    <h2>예수금 관리</h2>
+    <form action="/deposit" method="POST">
+        <label>입금 금액: <input type="number" name="amount" required></label>
+        <button type="submit">입금</button>
+    </form>
+    <form action="/withdraw" method="POST">
+        <label>출금 금액: <input type="number" name="amount" required></label>
+        <button type="submit">출금</button>
+    </form>
+
+    <!-- 보유 주식 현황 검색 -->
+    <h2>보유 주식 현황</h2>
+    <form method="GET" action="/mypage">
+        <input type="hidden" name="transactionsSearch" value="<%= transactionsSearch %>">
+        <input type="hidden" name="startDate" value="<%= startDate %>">
+        <input type="hidden" name="endDate" value="<%= endDate %>">
+        <label>종목명 검색: <input type="text" name="holdingsSearch" value="<%= holdingsSearch %>"></label>
+        <button type="submit">검색</button>
+    </form>
+    <ul>
+        <% holdings.forEach(holding => { %>
+            <li>
+                <%= holding.stock_name %> - 
+                현재가: <%= holding.current_price %> 원 - 
+                평균 매입가: <%= holding.average_price %> 원 - 
+                보유 수량: <%= holding.quantity %> - 
+                거래 가능 수량: <%= holding.tradable_quantity %> - 
+                등락률: <%= holding.change_rate %>% - 
+                평가 손익: <%= holding.profit_loss %> 원
+            </li>
+        <% }); %>
+    </ul>
+
+    <!-- 주식 거래 내역 검색 -->
+    <h2>주식 거래 내역</h2>
+    <form method="GET" action="/mypage">
+        <input type="hidden" name="holdingsSearch" value="<%= holdingsSearch %>">
+        <label>종목명 검색: <input type="text" name="transactionsSearch" value="<%= transactionsSearch %>"></label>
+        <label>시작 날짜: <input type="date" name="startDate" value="<%= startDate %>"></label>
+        <label>종료 날짜: <input type="date" name="endDate" value="<%= endDate %>"></label>
+        <button type="submit">검색</button>
+    </form>
+    <ul>
+        <% transactions.forEach(transaction => { %>
+            <li>
+                <%= transaction.stock_name %> - 
+                <%= transaction.transaction_type === 1 ? "매수" : "매도" %> - 
+                거래 가격: <%= transaction.transaction_price %> 원 - 
+                거래 수량: <%= transaction.transaction_quantity %> - 
+                거래 일자: <%= transaction.transaction_date %>
+            </li>
+        <% }); %>
+    </ul>
+
+    <!-- 주문 내역 -->
+    <h2>주문 내역</h2>
+    <table border="1">
+        <tr>
+            <th>주식 이름</th>
+            <th>주문 타입</th>
+            <th>카테고리</th>
+            <th>수량</th>
+            <th>가격</th>
+            <th>주문 시각</th>
+        </tr>
+        <% orders.forEach(order => { %>
+            <tr>
+                <td><%= order.stock_name %></td>
+                <td><%= order.order_type === 1 ? '매수' : '매도' %></td>
+                <td><%= order.order_category === 1 ? '시장가' : '지정가' %></td>
+                <td><%= order.order_quantity %></td>
+                <td><%= order.order_price %> 원</td>
+                <td><%= order.order_date %></td>
+            </tr>
+        <% }); %>
+    </table>
+
+    <button onclick="location.href='/'">메인 페이지로 돌아가기</button>
+</body>
+</html>
