@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>주식 거래내역</title>
+</head>
+<body>
+    <h1>주식 거래내역</h1>
+    <table border="1">
+        <tr>
+            <th>거래일자</th>
+            <th>거래유형</th>
+            <th>거래가격</th>
+            <th>거래수량</th>
+            <th>사용자</th>
+        </tr>
+        <% transactions.forEach(transaction => { %>
+            <tr>
+                <td><%= transaction.transaction_date %></td>
+                <td><%= transaction.transaction_type === 1 ? "매수" : "매도" %></td>
+                <td><%= transaction.transaction_price %> 원</td>
+                <td><%= transaction.transaction_quantity %> 주</td>
+                <td><%= transaction.user_name %></td>
+            </tr>
+        <% }); %>
+    </table>
+    <button onclick="location.href='/stocks'">주식 정보로 돌아가기</button>
+</body>
+</html>

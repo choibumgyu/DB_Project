@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>주식 정보</title>
+</head>
+<body>
+    <h1>주식 정보</h1>
+    
+    <form method="GET" action="/stocks">
+        <label>주식 이름 검색: <input type="text" name="search" value="<%= search %>"></label>
+        <button type="submit">검색</button>
+    </form>
+
+    <ul>
+        <% stocks.forEach(stock => { %>
+            <li>
+                <form action="/trade" method="GET">
+                    <button type="submit"><%= stock.stock_name %></button>
+                </form>
+                - 현재 가격: <%= stock.current_price %> 원 
+                - 등락률: <%= stock.change_rate %>% 
+                - 거래량: <%= stock.volume %> 주 
+                - 순위: <%= stock.rank %>위
+                - <a href="/stock/<%= stock.stock_id %>/orderbook">호가창 보기</a>
+                - <a href="/stock/<%= stock.stock_id %>/transactions">주식 거래내역 보기</a>
+            </li>
+        <% }); %>
+    </ul>
+
+    <button onclick="location.href='/'">메인 페이지로 돌아가기</button>
+</body>
+</html>
