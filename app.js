@@ -1,12 +1,42 @@
 const express = require('express');
 const app = express();
-const db = require('./db');        // db.js
-const redis = require('./redis');  // redis.js
+const db = require('./models/db');        // db.js
+const redis = require('./models/redis');  // redis.js
+const authState = require("./authState");
 
 app.set("view engine", "ejs");
 app.set("views", "./views");
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+let loggedInUserId = 1;
+
+const userRoutes = require("./routes/user");
+app.use("/", userRoutes);
+
+const authRoutes = require("./routes/auth");
+app.use("/", authRoutes);
+
+const moneyRoutes = require("./routes/money");
+app.use("/", moneyRoutes); // /deposit, /withdraw 그대로 작동
+
+const stockRoutes = require("./routes/stock");
+app.use("/", stockRoutes);
+
+const tradeRoutes = require("./routes/trade");
+app.use("/", tradeRoutes);
+
+app.get("/", (req, res) => {
+  const loggedInUserId = authState.getLoggedInUserId(); // 변경
+  res.render("app", { loggedIn: !!loggedInUserId });
+});
+
+app.listen(3000, () => {
+    console.log('서버 실행 중');
+});
+
+/*
+
 //7월14일 수정중.
 // 임시 로그인 유저 (실제 구현 시 세션/로그인 처리 필요)
 const loggedInUserId = 1;
@@ -394,19 +424,39 @@ router.post('/trade/limit-buy', async (req, res) => {
   const totalCost = quantity * price;
   const conn = await db.getConnection();
 
+  const redisOps = [];
+
   try {
     await conn.beginTransaction();
 
-    const [user] = await conn.query('SELECT balance FROM User WHERE user_id = ? FOR UPDATE', [userId]);
+    const [user] = await conn.query(
+      'SELECT balance FROM User WHERE user_id = ? FOR UPDATE',
+      [userId]
+    );
     if (user[0].balance < totalCost) throw new Error('예수금 부족');
 
-    await conn.query('UPDATE User SET balance = balance - ? WHERE user_id = ?', [totalCost, userId]);
-    const [buyRes] = await conn.query(`INSERT INTO Orders (user_id, stock_id, order_type, order_category, order_price, order_quantity, order_date) VALUES (?, ?, 1, 2, ?, ?, NOW())`, [userId, stockId, price, quantity]);
+    await conn.query(
+      'UPDATE User SET balance = balance - ? WHERE user_id = ?',
+      [totalCost, userId]
+    );
+
+    const [buyRes] = await conn.query(
+      `INSERT INTO Orders (user_id, stock_id, order_type, order_category, order_price, order_quantity, order_date) 
+       VALUES (?, ?, 1, 2, ?, ?, NOW())`,
+      [userId, stockId, price, quantity]
+    );
     const orderId = buyRes.insertId;
     let remaining = quantity;
 
     const sellKey = `sell:stock:${stockId}`;
-    const candidates = await redis.zrangebyscore(sellKey, '-inf', price);
+    let candidates = await redis.zrangebyscore(sellKey, '-inf', price);
+
+    // ✅ 동일 가격대에서 시간 순 정렬 (timestamp 기준 오름차순)
+    candidates.sort((a, b) => {
+      const aTime = Number(a.split(':')[1]);
+      const bTime = Number(b.split(':')[1]);
+      return aTime - bTime;
+    });
 
     for (const key of candidates) {
       if (remaining <= 0) break;
@@ -417,35 +467,84 @@ router.post('/trade/limit-buy', async (req, res) => {
       const tradeQty = Math.min(sellQty, remaining);
       const tradePrice = parseFloat(sell.price);
 
-      await conn.query(`INSERT INTO Transaction (user_id, stock_id, transaction_type, transaction_price, transaction_quantity, transaction_date) VALUES (?, ?, ?, ?, ?, NOW()), (?, ?, ?, ?, ?, NOW())`, [userId, stockId, 1, tradePrice, tradeQty, sell.userId, stockId, 2, tradePrice, tradeQty]);
+      await conn.query(
+        `INSERT INTO Transaction 
+         (user_id, stock_id, transaction_type, transaction_price, transaction_quantity, transaction_date) 
+         VALUES (?, ?, ?, ?, ?, NOW()), (?, ?, ?, ?, ?, NOW())`,
+        [
+          userId, stockId, 1, tradePrice, tradeQty,
+          sell.userId, stockId, 2, tradePrice, tradeQty
+        ]
+      );
 
-      await conn.query(`UPDATE User SET balance = balance + ? WHERE user_id = ?`, [tradeQty * tradePrice, sell.userId]);
+      await conn.query(
+        `UPDATE User SET balance = balance + ? WHERE user_id = ?`,
+        [tradeQty * tradePrice, sell.userId]
+      );
 
-      await conn.query(`INSERT INTO User_Holdings (user_id, stock_id, average_price, quantity) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE average_price = ((average_price * quantity) + (? * ?)) / (quantity + ?), quantity = quantity + VALUES(quantity)`, [userId, stockId, tradePrice, tradeQty, tradePrice, tradeQty, tradeQty]);
+      await conn.query(
+        `INSERT INTO User_Holdings 
+         (user_id, stock_id, average_price, quantity) 
+         VALUES (?, ?, ?, ?) 
+         ON DUPLICATE KEY UPDATE 
+           average_price = ((average_price * quantity) + (? * ?)) / (quantity + ?), 
+           quantity = quantity + VALUES(quantity)`,
+        [userId, stockId, tradePrice, tradeQty, tradePrice, tradeQty, tradeQty]
+      );
 
-      await conn.query(`UPDATE User_Holdings SET quantity = quantity - ? WHERE user_id = ? AND stock_id = ?`, [tradeQty, sell.userId, stockId]);
+      await conn.query(
+        `UPDATE User_Holdings SET quantity = quantity - ? WHERE user_id = ? AND stock_id = ?`,
+        [tradeQty, sell.userId, stockId]
+      );
 
       remaining -= tradeQty;
 
       if (sellQty > tradeQty) {
-        await redis.hset(`order:${sellOrderId}`, 'quantity', sellQty - tradeQty);
-        await conn.query(`UPDATE Orders SET order_quantity = ? WHERE order_id = ?`, [sellQty - tradeQty, sellOrderId]);
+        await conn.query(
+          `UPDATE Orders SET order_quantity = ? WHERE order_id = ?`,
+          [sellQty - tradeQty, sellOrderId]
+        );
+        redisOps.push(() =>
+          redis.hset(`order:${sellOrderId}`, 'quantity', sellQty - tradeQty)
+        );
       } else {
-        await redis.zrem(sellKey, key);
-        await redis.del(`order:${sellOrderId}`);
         await conn.query(`DELETE FROM Orders WHERE order_id = ?`, [sellOrderId]);
+        redisOps.push(() => redis.zrem(sellKey, key));
+        redisOps.push(() => redis.del(`order:${sellOrderId}`));
       }
     }
 
     if (remaining > 0) {
-      await conn.query(`UPDATE Orders SET order_quantity = ? WHERE order_id = ?`, [remaining, orderId]);
-      await redis.zadd(`buy:stock:${stockId}`, price, `${orderId}:${Date.now()}`);
-      await redis.hset(`order:${orderId}`, { userId, price, quantity: remaining, stockId, type: 'buy' });
+      await conn.query(
+        `UPDATE Orders SET order_quantity = ? WHERE order_id = ?`,
+        [remaining, orderId]
+      );
+      redisOps.push(() =>
+        redis.zadd(`buy:stock:${stockId}`, price, `${orderId}:${Date.now()}`)
+      );
+      redisOps.push(() =>
+        redis.hset(`order:${orderId}`, {
+          userId,
+          price,
+          quantity: remaining,
+          stockId,
+          type: 'buy'
+        })
+      );
     } else {
       await conn.query(`DELETE FROM Orders WHERE order_id = ?`, [orderId]);
     }
 
     await conn.commit();
+
+    for (const op of redisOps) {
+      try {
+        await op();
+      } catch (e) {
+        console.error('[Redis 오류] 일부 주문북 갱신 실패:', e);
+      }
+    }
+
     res.redirect(`/stock/${stockId}/orderbook`);
   } catch (err) {
     await conn.rollback();
@@ -456,24 +555,42 @@ router.post('/trade/limit-buy', async (req, res) => {
   }
 });
 
-// 매도 지정가 주문
 router.post('/trade/limit-sell', async (req, res) => {
   const { stockId, quantity, price } = req.body;
   const userId = req.session.userId;
   const conn = await db.getConnection();
 
+  const redisOps = [];
+
   try {
     await conn.beginTransaction();
 
-    const [hold] = await conn.query(`SELECT quantity FROM User_Holdings WHERE user_id = ? AND stock_id = ? FOR UPDATE`, [userId, stockId]);
-    if (!hold.length || hold[0].quantity < quantity) throw new Error('보유 수량 부족');
+    const [hold] = await conn.query(
+      `SELECT quantity FROM User_Holdings 
+       WHERE user_id = ? AND stock_id = ? FOR UPDATE`,
+      [userId, stockId]
+    );
+    if (!hold.length || hold[0].quantity < quantity)
+      throw new Error('보유 수량 부족');
 
-    const [sellRes] = await conn.query(`INSERT INTO Orders (user_id, stock_id, order_type, order_category, order_price, order_quantity, order_date) VALUES (?, ?, 2, 2, ?, ?, NOW())`, [userId, stockId, price, quantity]);
+    const [sellRes] = await conn.query(
+      `INSERT INTO Orders 
+       (user_id, stock_id, order_type, order_category, order_price, order_quantity, order_date) 
+       VALUES (?, ?, 2, 2, ?, ?, NOW())`,
+      [userId, stockId, price, quantity]
+    );
     const orderId = sellRes.insertId;
     let remaining = quantity;
 
     const buyKey = `buy:stock:${stockId}`;
-    const candidates = await redis.zrevrangebyscore(buyKey, '+inf', price);
+    let candidates = await redis.zrevrangebyscore(buyKey, '+inf', price);
+
+    // ✅ 동일 가격대 시간순 정렬 (timestamp 기준 오름차순)
+    candidates.sort((a, b) => {
+      const aTime = Number(a.split(':')[1]);
+      const bTime = Number(b.split(':')[1]);
+      return aTime - bTime;
+    });
 
     for (const key of candidates) {
       if (remaining <= 0) break;
@@ -484,33 +601,85 @@ router.post('/trade/limit-sell', async (req, res) => {
       const tradeQty = Math.min(buyQty, remaining);
       const tradePrice = parseFloat(buy.price);
 
-      await conn.query(`INSERT INTO Transaction (...) VALUES (...)`); // 생략 가능
+      await conn.query(
+        `INSERT INTO Transaction 
+         (user_id, stock_id, transaction_type, transaction_price, transaction_quantity, transaction_date) 
+         VALUES (?, ?, ?, ?, ?, NOW()), (?, ?, ?, ?, ?, NOW())`,
+        [
+          userId, stockId, 2, tradePrice, tradeQty,
+          buy.userId, stockId, 1, tradePrice, tradeQty
+        ]
+      );
 
-      await conn.query(`UPDATE User SET balance = balance + ? WHERE user_id = ?`, [tradeQty * tradePrice, userId]);
-      await conn.query(`INSERT INTO User_Holdings (...) VALUES (...) ON DUPLICATE KEY UPDATE ...`); // 생략 가능
-      await conn.query(`UPDATE User_Holdings SET quantity = quantity - ? WHERE user_id = ? AND stock_id = ?`, [tradeQty, userId, stockId]);
+      await conn.query(
+        `UPDATE User SET balance = balance + ? WHERE user_id = ?`,
+        [tradeQty * tradePrice, userId]
+      );
+
+      await conn.query(
+        `INSERT INTO User_Holdings 
+         (user_id, stock_id, average_price, quantity) 
+         VALUES (?, ?, ?, ?) 
+         ON DUPLICATE KEY UPDATE 
+           average_price = ((average_price * quantity) + (? * ?)) / (quantity + ?), 
+           quantity = quantity + VALUES(quantity)`,
+        [buy.userId, stockId, tradePrice, tradeQty, tradePrice, tradeQty, tradeQty]
+      );
+
+      await conn.query(
+        `UPDATE User_Holdings SET quantity = quantity - ? 
+         WHERE user_id = ? AND stock_id = ?`,
+        [tradeQty, userId, stockId]
+      );
 
       remaining -= tradeQty;
 
       if (buyQty > tradeQty) {
-        await redis.hset(`order:${buyOrderId}`, 'quantity', buyQty - tradeQty);
-        await conn.query(`UPDATE Orders SET order_quantity = ? WHERE order_id = ?`, [buyQty - tradeQty, buyOrderId]);
+        await conn.query(
+          `UPDATE Orders SET order_quantity = ? WHERE order_id = ?`,
+          [buyQty - tradeQty, buyOrderId]
+        );
+        redisOps.push(() =>
+          redis.hset(`order:${buyOrderId}`, 'quantity', buyQty - tradeQty)
+        );
       } else {
-        await redis.zrem(buyKey, key);
-        await redis.del(`order:${buyOrderId}`);
         await conn.query(`DELETE FROM Orders WHERE order_id = ?`, [buyOrderId]);
+        redisOps.push(() => redis.zrem(buyKey, key));
+        redisOps.push(() => redis.del(`order:${buyOrderId}`));
       }
     }
 
     if (remaining > 0) {
-      await conn.query(`UPDATE Orders SET order_quantity = ? WHERE order_id = ?`, [remaining, orderId]);
-      await redis.zadd(`sell:stock:${stockId}`, price, `${orderId}:${Date.now()}`);
-      await redis.hset(`order:${orderId}`, { userId, price, quantity: remaining, stockId, type: 'sell' });
+      await conn.query(
+        `UPDATE Orders SET order_quantity = ? WHERE order_id = ?`,
+        [remaining, orderId]
+      );
+      redisOps.push(() =>
+        redis.zadd(`sell:stock:${stockId}`, price, `${orderId}:${Date.now()}`)
+      );
+      redisOps.push(() =>
+        redis.hset(`order:${orderId}`, {
+          userId,
+          price,
+          quantity: remaining,
+          stockId,
+          type: 'sell'
+        })
+      );
     } else {
       await conn.query(`DELETE FROM Orders WHERE order_id = ?`, [orderId]);
     }
 
     await conn.commit();
+
+    for (const op of redisOps) {
+      try {
+        await op();
+      } catch (e) {
+        console.error('[Redis 오류] 매도 주문 후 갱신 실패:', e);
+      }
+    }
+
     res.redirect(`/stock/${stockId}/orderbook`);
   } catch (err) {
     await conn.rollback();
@@ -521,8 +690,11 @@ router.post('/trade/limit-sell', async (req, res) => {
   }
 });
 
+
 module.exports = router;
 
 app.listen(3000, () => {
     console.log('서버 실행 중');
 });
+
+*/
