@@ -1,10 +1,11 @@
 // controllers/moneyController.js
 const db = require("../models/db");
-const authState = require("../authState"); 
+//const authState = require("../authState"); 
 
 
 exports.handleDeposit = async (req, res) => {
-  const loggedInUserId = authState.getLoggedInUserId();
+  //const loggedInUserId = authState.getLoggedInUserId();
+  const loggedInUserId = req.session.userId;
   const { amount } = req.body;
   if (!loggedInUserId) return res.redirect("/login");
 
@@ -22,7 +23,8 @@ exports.handleDeposit = async (req, res) => {
 };
 
 exports.handleWithdraw = async (req, res) => {
-  const loggedInUserId = authState.getLoggedInUserId();
+  //const loggedInUserId = authState.getLoggedInUserId();
+  const loggedInUserId = req.session.userId;
   const { amount } = req.body;
   if (!loggedInUserId) return res.redirect("/login");
 

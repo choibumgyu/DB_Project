@@ -1,13 +1,14 @@
 // controllers/userController.js
 const db = require("../models/db");
-const authState = require("../authState"); 
+//const authState = require("../authState"); 
 
 exports.showMyPage = async (req, res) => {
-    const userId = authState.getLoggedInUserId();
-    if (!userId) return res.redirect("/login");
+    //const userId = authState.getLoggedInUserId();
+    const userId = req.session.userId;
+    console.log("userId:", userId);
 
     const { holdingsSearch, transactionsSearch, startDate, endDate } = req.query;
-    const userQuery = "SELECT name, password, balance FROM User WHERE user_id = ?";
+    const userQuery = "SELECT name, balance FROM User WHERE user_id = ?";
 
     const holdingsQuery = `
         SELECT 

@@ -2,7 +2,29 @@ const express = require('express');
 const app = express();
 const db = require('./models/db');        // db.js
 const redis = require('./models/redis');  // redis.js
-const authState = require("./authState");
+//const authState = require("./authState");
+// 세션 미들웨어 장착
+const session = require("express-session");
+const RedisStore = require("connect-redis")(session);
+
+app.use(session({
+  store: new RedisStore({ client: redis }),
+  secret: "change-this-secret",     // 나중에 .env로 빼기
+  resave: false,                    // 매 요청마다 세션을 다시 저장하지 않음
+  saveUninitialized: false,         // 로그인 전엔 세션 안 만들기(불필요 쿠키 방지)
+  cookie: {
+    httpOnly: true,                 // JS로 쿠키 접근 차단(XSS 완화)
+    maxAge: 1000 * 60 * 60 * 2       // 2시간 (원하는 값으로)
+    // secure: true  // https에서만 (배포 시 켜기)
+  }
+}));
+
+app.use((req, res, next) => {
+  res.locals.loggedIn = !!req.session.userId;
+  res.locals.userId = req.session.userId || null;
+  next();
+});
+
 
 app.set("view engine", "ejs");
 app.set("views", "./views");
@@ -27,9 +49,12 @@ const tradeRoutes = require("./routes/trade");
 app.use("/", tradeRoutes);
 
 app.get("/", (req, res) => {
-  const loggedInUserId = authState.getLoggedInUserId(); // 변경
+  //const loggedInUserId = authState.getLoggedInUserId(); // 변경
+  const loggedInUserId = req.session.userId;
   res.render("app", { loggedIn: !!loggedInUserId });
 });
+
+
 
 app.listen(3000, () => {
     console.log('서버 실행 중');

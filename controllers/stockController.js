@@ -2,11 +2,12 @@
 const db = require("../models/db");
 const authState = require("../authState"); 
 
-let loggedInUserId = 1; // 추후 세션/쿠키로 대체
+//let loggedInUserId = 1; // 추후 세션/쿠키로 대체
 
 // 주식 목록
 exports.getStockList = async (req, res) => {
-  const loggedInUserId = authState.getLoggedInUserId();
+  //const loggedInUserId = authState.getLoggedInUserId();
+  const loggedInUserId = req.session.userId;
   const { search } = req.query;
   const conn = await db.getConnection();
 
